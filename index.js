@@ -1,4 +1,3 @@
-// cliente-mercadolibre.js
 class ClienteMercadoLibre {
     constructor(urlBase = 'http://localhost:5000') {
         this.urlBase = urlBase;
@@ -62,6 +61,7 @@ class ClienteMercadoLibre {
 // Ejemplo de uso del cliente
 const cliente = new ClienteMercadoLibre();
 
+// Función para mostrar resultados en la interfaz
 function mostrarResultados(datos) {
     const contenedorProductos = document.getElementById('contenedor-productos');
     contenedorProductos.innerHTML = '';
@@ -84,6 +84,7 @@ function mostrarResultados(datos) {
     });
 }
 
+// Función para manejar el envío del formulario de búsqueda
 async function manejarBusqueda(evento) {
     evento.preventDefault();
     const inputBusqueda = document.getElementById('input-busqueda');
@@ -97,6 +98,7 @@ async function manejarBusqueda(evento) {
         const datos = await cliente.buscarProductos(inputBusqueda.value);
         mostrarResultados(datos);
 
+        // Habilitar botón de exportación
         const botonExportar = document.getElementById('boton-exportar');
         botonExportar.disabled = false;
         botonExportar.onclick = async () => {
