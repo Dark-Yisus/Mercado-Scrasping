@@ -1,161 +1,145 @@
-class ClienteMercadoLibre {
-    constructor(urlBase = 'http://localhost:5000') {
-        this.urlBase = urlBase;
-        console.log('Cliente inicializado con URL base:', urlBase);
+import React, { useState } from 'react';
+import { Loader2, Download, Search } from 'lucide-react';
+
+const BuscadorMercadoLibre = () => {
+  const [terminoBusqueda, setTerminoBusqueda] = useState('');
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState('');
+  const [resultados, setResultados] = useState(null);
+  const [cargandoExportacion, setCargandoExportacion] = useState(false);
+
+  const manejarBusqueda = async (e) => {
+    e.preventDefault();
+    if (!terminoBusqueda.trim()) {
+      setError('Por favor ingrese un término de búsqueda');
+      return;
     }
 
-    async buscarProductos(producto) {
-        try {
-            console.log('Iniciando búsqueda para:', producto);
-            console.log('URL de búsqueda:', `${this.urlBase}/mercadolibre`);
-
-            const respuesta = await fetch(`${this.urlBase}/mercadolibre`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    // Agregamos headers para CORS
-                    'Accept': 'application/json',
-                },
-                // Agregamos credentials para cookies si es necesario
-                credentials: 'include',
-                body: JSON.stringify({ producto })
-            });
-
-            console.log('Status de la respuesta:', respuesta.status);
-            console.log('Headers de la respuesta:', [...respuesta.headers.entries()]);
-
-            if (!respuesta.ok) {
-                throw new Error(`Error HTTP: ${respuesta.status} - ${respuesta.statusText}`);
-            }
-
-            const datos = await respuesta.json();
-            console.log('Datos recibidos:', datos);
-            return datos;
-        } catch (error) {
-            console.error('Error detallado al buscar productos:', {
-                mensaje: error.message,
-                tipo: error.name,
-                stack: error.stack
-            });
-            if (error instanceof TypeError && error.message === 'Failed to fetch') {
-                throw new Error('No se pudo conectar con el servidor. Por favor, verifica que el servidor esté corriendo en ' + this.urlBase);
-            }
-            throw error;
-        }
-    }
-
-    async descargarExcel(datos) {
-        try {
-            console.log('Iniciando descarga de Excel');
-            const formData = new FormData();
-            formData.append('data', JSON.stringify(datos));
-
-            const respuesta = await fetch(`${this.urlBase}/descargarExcel`, {
-                method: 'POST',
-                credentials: 'include',
-                body: formData
-            });
-
-            if (!respuesta.ok) {
-                throw new Error(`Error HTTP: ${respuesta.status} - ${respuesta.statusText}`);
-            }
-
-            const blob = await respuesta.blob();
-            return blob;
-        } catch (error) {
-            console.error('Error al descargar Excel:', error);
-            throw error;
-        }
-    }
-}
-
-// Inicializar el cliente
-const cliente = new ClienteMercadoLibre();
-
-function mostrarResultados(datos) {
-    const contenedorProductos = document.getElementById('contenedor-productos');
-    contenedorProductos.innerHTML = '';
-
-    if (!datos.datos || !datos.datos.titulos || datos.datos.titulos.length === 0) {
-        contenedorProductos.innerHTML = '<p>No se encontraron productos</p>';
-        return;
-    }
-
-    datos.datos.titulos.forEach((titulo, indice) => {
-        const tarjetaProducto = document.createElement('div');
-        tarjetaProducto.className = 'tarjeta-producto';
-        tarjetaProducto.innerHTML = `
-            <img src="${datos.datos.imagenes[indice]}" alt="${titulo}" class="imagen-producto">
-            <h3>${titulo}</h3>
-            <p>Vendedor: ${datos.datos.vendedor[indice]}</p>
-            <p>Precio original: ${datos.datos.precio_original[indice]}</p>
-            <p>Precio con descuento: ${datos.datos.precio_con_descuento[indice]}</p>
-            <p>Descuento: ${datos.datos.descuentos[indice]}</p>
-            <p>Cuotas: ${datos.datos.cuotas_container[indice]}</p>
-            <p>Envío: ${datos.datos.envio[indice]}</p>
-            <a href="${datos.datos.urls[indice]}" target="_blank">Ver en MercadoLibre</a>
-        `;
-        contenedorProductos.appendChild(tarjetaProducto);
-    });
-}
-
-async function manejarBusqueda(evento) {
-    evento.preventDefault();
-    const inputBusqueda = document.getElementById('input-busqueda');
-    const indicadorCarga = document.getElementById('indicador-carga');
-    const mensajeError = document.getElementById('mensaje-error');
-    const botonBuscar = document.querySelector('button[type="submit"]');
-    const botonExportar = document.getElementById('boton-exportar');
-    const contenedorProductos = document.getElementById('contenedor-productos');
+    setCargando(true);
+    setError('');
+    setResultados(null);
 
     try {
-        // Validar entrada
-        if (!inputBusqueda.value.trim()) {
-            throw new Error('Por favor ingrese un término de búsqueda');
-        }
+      const respuesta = await fetch('/mercadolibre', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ producto: terminoBusqueda })
+      });
 
-        // Resetear estado
-        botonBuscar.disabled = true;
-        indicadorCarga.style.display = 'block';
-        mensajeError.style.display = 'none';
-        botonExportar.disabled = true;
-        contenedorProductos.innerHTML = '';
+      if (!respuesta.ok) {
+        throw new Error(`Error HTTP: ${respuesta.status}`);
+      }
 
-        console.log('Iniciando búsqueda para:', inputBusqueda.value);
-        const datos = await cliente.buscarProductos(inputBusqueda.value);
-        
-        mostrarResultados(datos);
-
-        // Configurar botón de exportación
-        botonExportar.disabled = false;
-        botonExportar.onclick = async () => {
-            try {
-                botonExportar.disabled = true;
-                indicadorCarga.style.display = 'block';
-                
-                const blob = await cliente.descargarExcel(datos.datos);
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'productos_mercadolibre.xlsx';
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
-            } catch (error) {
-                mensajeError.textContent = 'Error al descargar Excel: ' + error.message;
-                mensajeError.style.display = 'block';
-            } finally {
-                botonExportar.disabled = false;
-                indicadorCarga.style.display = 'none';
-            }
-        };
-
-    } catch (error) {
-        mensajeError.textContent = error.message;
-        mensajeError.style.display = 'block';
+      const datos = await respuesta.json();
+      setResultados(datos);
+    } catch (err) {
+      setError(err.message);
     } finally {
-        botonBuscar.disabled = false;
-        indicadorCarga.style.display = 'none';
+      setCargando(false);
     }
-}
+  };
+
+  const manejarExportacion = async () => {
+    if (!resultados) return;
+
+    setCargandoExportacion(true);
+    try {
+      const formData = new FormData();
+      formData.append('data', JSON.stringify(resultados.datos));
+
+      const respuesta = await fetch('/descargarExcel', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!respuesta.ok) {
+        throw new Error(`Error HTTP: ${respuesta.status}`);
+      }
+
+      const blob = await respuesta.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'productos_mercadolibre.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      setError('Error al descargar Excel: ' + err.message);
+    } finally {
+      setCargandoExportacion(false);
+    }
+  };
+
+  return (
+    <div className="max-w-6xl mx-auto p-4">
+      <form onSubmit={manejarBusqueda} className="flex gap-2 mb-4">
+        <input
+          type="text"
+          value={terminoBusqueda}
+          onChange={(e) => setTerminoBusqueda(e.target.value)}
+          placeholder="Buscar productos..."
+          className="flex-1 px-4 py-2 border rounded"
+        />
+        <button
+          type="submit"
+          disabled={cargando}
+          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 flex items-center gap-2"
+        >
+          {cargando ? <Loader2 className="animate-spin" size={20} /> : <Search size={20} />}
+          Buscar
+        </button>
+        {resultados && (
+          <button
+            onClick={manejarExportacion}
+            disabled={cargandoExportacion}
+            className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50 flex items-center gap-2"
+          >
+            {cargandoExportacion ? <Loader2 className="animate-spin" size={20} /> : <Download size={20} />}
+            Exportar
+          </button>
+        )}
+      </form>
+
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+          {error}
+        </div>
+      )}
+
+      {resultados && resultados.datos && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {resultados.datos.titulos.map((titulo, index) => (
+            <div key={index} className="border rounded p-4 hover:shadow-lg transition-shadow">
+              <img
+                src={resultados.datos.imagenes[index]}
+                alt={titulo}
+                className="w-full h-48 object-cover mb-4 rounded"
+              />
+              <h3 className="font-bold mb-2 text-lg">{titulo}</h3>
+              <p className="text-gray-600">Vendedor: {resultados.datos.vendedor[index]}</p>
+              <p className="text-gray-600">Precio original: {resultados.datos.precio_original[index]}</p>
+              <p className="text-gray-600">Precio con descuento: {resultados.datos.precio_con_descuento[index]}</p>
+              <p className="text-green-600">Descuento: {resultados.datos.descuentos[index]}</p>
+              <p className="text-gray-600">Cuotas: {resultados.datos.cuotas_container[index]}</p>
+              <p className="text-gray-600">Envío: {resultados.datos.envio[index]}</p>
+              <a
+                href={resultados.datos.urls[index]}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-4 inline-block px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                Ver en MercadoLibre
+              </a>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default BuscadorMercadoLibre;
