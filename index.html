@@ -3,16 +3,64 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Buscador MercadoLibre</title>
-    <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
-    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <title>Buscador de Productos MercadoLibre</title>
+    <style>
+        /* ... (mantener todos los estilos anteriores) ... */
+
+        /* Agregar estilos para el indicador de carga */
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 4px solid #2d3277;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        #indicador-carga {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+    </style>
 </head>
 <body>
-    <div id="root"></div>
-    <script type="text/babel">
-        ReactDOM.render(<BuscadorMercadoLibre />, document.getElementById('root'));
-    </script>
+    <div class="container">
+        <header>
+            <h1>Buscador de Productos MercadoLibre</h1>
+        </header>
+
+        <form class="search-form" onsubmit="manejarBusqueda(event)">
+            <input 
+                type="text" 
+                id="input-busqueda" 
+                placeholder="Ingrese el producto a buscar..."
+                required
+            >
+            <button type="submit">Buscar</button>
+        </form>
+
+        <div class="controls">
+            <button id="boton-exportar" disabled>Exportar a Excel</button>
+        </div>
+
+        <div id="indicador-carga">
+            <div class="loader"></div>
+            <p>Buscando productos...</p>
+        </div>
+
+        <div id="mensaje-error"></div>
+
+        <div id="contenedor-productos"></div>
+    </div>
+
+    <!-- Importante: Cambiar la referencia al archivo JavaScript -->
+    <script src="script.js"></script>
 </body>
 </html>
