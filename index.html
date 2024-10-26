@@ -3,40 +3,184 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Búsqueda MercadoLibre</title>
-    <link rel="stylesheet" href="styles.css">
+    <title>Cliente API MercadoLibre</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .search-section {
+            margin-bottom: 20px;
+        }
+        input[type="text"] {
+            padding: 8px;
+            width: 300px;
+            margin-right: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #2d3277;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #1a1b4b;
+        }
+        #results {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #fff;
+            min-height: 100px;
+        }
+        .loading {
+            display: none;
+            color: #666;
+            margin: 10px 0;
+        }
+    </style>
 </head>
 <body>
-    <div class="search-container">
-        <input type="text" id="searchInput" placeholder="Buscar productos...">
-        <button onclick="realizarBusqueda()">Buscar</button>
-        <button id="btnDescargar" onclick="descargarExcelActual()" disabled>Descargar Excel</button>
+    <div class="container">
+        <h1>Cliente API MercadoLibre</h1>
+        
+        <div class="search-section">
+            <input type="text" id="searchInput" placeholder="Ingrese el nombre del producto">
+            <button onclick="iniciarBusqueda()">Buscar</button>
+        </div>
+
+        <div id="loading" class="loading">Buscando productos...</div>
+        <div id="results"></div>
     </div>
 
-    <div id="loadingIndicator" class="loading-overlay">
-        <div>Cargando...</div>
-    </div>
+    <script>
+        // Cliente API MercadoLibre
+        class MercadoLibreAPI {
+            constructor(baseURL = 'http://localhost:5000') {
+                this.baseURL = baseURL;
+            }
 
-    <table>
-        <thead>
-            <tr>
-                <th>Imagen</th>
-                <th onclick="ordenarTabla('titulo')">Título</th>
-                <th onclick="ordenarTabla('vendedor')">Vendedor</th>
-                <th onclick="ordenarTabla('precio')">Precio Original</th>
-                <th onclick="ordenarTabla('precioDescuento')">Precio con Descuento</th>
-                <th>Descuento</th>
-                <th>Cuotas</th>
-                <th>Envío</th>
-                <th onclick="ordenarTabla('vendidos')">Cantidad Vendida</th>
-            </tr>
-        </thead>
-        <tbody id="resultsTable"></tbody>
-    </table>
+            async buscarProductos(producto) {
+                try {
+                    const respuesta = await fetch(`${this.baseURL}/mercadolibre`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ producto })
+                    });
 
-    <!-- Cargar primero la clase API -->
-    <script src="script.js"></script>
-    <!-- Cargar el script principal después -->
-    <script src="main.js"></script>
+                    if (!respuesta.ok) {
+                        throw new Error(`¡Error HTTP! estado: ${respuesta.status}`);
+                    }
+
+                    const datos = await respuesta.json();
+                    return datos;
+                } catch (error) {
+                    console.error('Error al buscar productos:', error);
+                    throw error;
+                }
+            }
+
+            async descargarExcel(datos) {
+                try {
+                    const formData = new FormData();
+                    formData.append('data', JSON.stringify(datos));
+
+                    const respuesta = await fetch(`${this.baseURL}/descargarExcel`, {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!respuesta.ok) {
+                        throw new Error(`¡Error HTTP! estado: ${respuesta.status}`);
+                    }
+
+                    const blob = await respuesta.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = 'productos_mercadolibre.xlsx';
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    a.remove();
+                } catch (error) {
+                    console.error('Error al descargar Excel:', error);
+                    throw error;
+                }
+            }
+        }
+
+        // Instancia de la API
+        const api = new MercadoLibreAPI();
+
+        // Función para iniciar la búsqueda desde la interfaz
+        async function iniciarBusqueda() {
+            const searchInput = document.getElementById('searchInput');
+            const loadingDiv = document.getElementById('loading');
+            const resultsDiv = document.getElementById('results');
+
+            if (!searchInput.value.trim()) {
+                alert('Por favor ingrese un término de búsqueda');
+                return;
+            }
+
+            loadingDiv.style.display = 'block';
+            resultsDiv.innerHTML = '';
+
+            try {
+                const resultado = await api.buscarProductos(searchInput.value);
+                
+                let html = `<h3>Se encontraron ${resultado.num_products} productos</h3>`;
+                html += '<button onclick="descargarResultados()">Descargar Excel</button>';
+                html += '<ul>';
+                resultado.datos.forEach(producto => {
+                    html += `<li>${producto.titulo} - $${producto.precio}</li>`;
+                });
+                html += '</ul>';
+                
+                resultsDiv.innerHTML = html;
+                
+                // Guardar los datos para la descarga
+                window.ultimosResultados = resultado.datos;
+                
+            } catch (error) {
+                resultsDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            } finally {
+                loadingDiv.style.display = 'none';
+            }
+        }
+
+        // Función para descargar resultados en Excel
+        async function descargarResultados() {
+            if (!window.ultimosResultados) {
+                alert('No hay resultados para descargar');
+                return;
+            }
+
+            try {
+                await api.descargarExcel(window.ultimosResultados);
+                alert('Archivo Excel descargado exitosamente');
+            } catch (error) {
+                alert(`Error al descargar Excel: ${error.message}`);
+            }
+        }
+    </script>
 </body>
 </html>
