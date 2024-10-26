@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, send_file
+from flask import Flask, request, jsonify, send_file
 import requests
 from bs4 import BeautifulSoup
 import re
@@ -229,24 +229,6 @@ def mercadoLibre():
         logger.error(f"Error inesperado en mercadoLibre: {str(e)}")
         return jsonify({"error": "Error interno del servidor"}), 500
 
-@app.route('/descargarInfo', methods=["GET", "POST"])
-def descargarInfo():
-    if request.method == "POST":
-        producto = request.form.get("producto")
-        if not producto:
-            return render_template('index.html', error="Producto no especificado.")
-
-        try:
-            r = requests.post('http://localhost:5000/mercadolibre', json={"producto": producto})
-            r.raise_for_status()
-            data = r.json()
-            return render_template('index.html', data=data["datos"], num_products=data["num_products"], processing_time=data["processing_time"])
-        except requests.RequestException as e:
-            logger.error(f"Error al obtener datos de MercadoLibre: {e}")
-            return render_template('index.html', error=f"Error al obtener datos de MercadoLibre: {str(e)}")
-    
-    return render_template('index.html')
-
 @app.route('/descargarExcel', methods=['POST'])
 def descargarExcel():
     try:
@@ -306,7 +288,6 @@ def descargarExcel():
     except Exception as e:
         logger.error(f"Error al generar el archivo Excel: {str(e)}")
         return jsonify({"error": "Error al generar el archivo Excel"}), 500
-
 
 if __name__ == '__main__':
     app.run(debug=True)
