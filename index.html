@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!-- <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -7,7 +7,7 @@
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 800px;
+            max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
             background-color: #f5f5f5;
@@ -35,22 +35,77 @@
             border: none;
             border-radius: 4px;
             cursor: pointer;
+            margin: 5px;
         }
         button:hover {
             background-color: #1a1b4b;
-        }
-        #results {
-            margin-top: 20px;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            background-color: #fff;
-            min-height: 100px;
         }
         .loading {
             display: none;
             color: #666;
             margin: 10px 0;
+        }
+        .error {
+            color: #721c24;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .debug-info {
+            font-family: monospace;
+            background-color: #f8f9fa;
+            padding: 10px;
+            margin-top: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        #serverStatus {
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .status-ok {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status-error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        /* Nuevos estilos para la tabla */
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        .results-table th, 
+        .results-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        .results-table th {
+            background-color: #2d3277;
+            color: white;
+            font-weight: bold;
+        }
+        .results-table tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+        .results-table tr:hover {
+            background-color: #f2f2f2;
+        }
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 20px 0;
+        }
+        .price {
+            font-weight: bold;
+            color: #2d3277;
         }
     </style>
 </head>
@@ -58,9 +113,17 @@
     <div class="container">
         <h1>Cliente API MercadoLibre</h1>
         
+        <div id="serverStatus">Verificando conexión con el servidor...</div>
+
         <div class="search-section">
             <input type="text" id="searchInput" placeholder="Ingrese el nombre del producto">
             <button onclick="iniciarBusqueda()">Buscar</button>
+        </div>
+
+        <div>
+            <label for="serverUrl">URL del servidor:</label>
+            <input type="text" id="serverUrl" value="http://localhost:5000" style="width: 250px;">
+            <button onclick="actualizarURL()">Actualizar URL</button>
         </div>
 
         <div id="loading" class="loading">Buscando productos...</div>
@@ -74,25 +137,44 @@
                 this.baseURL = baseURL;
             }
 
+            async verificarConexion() {
+                try {
+                    const response = await fetch(`${this.baseURL}/mercadolibre`, {
+                        method: 'OPTIONS',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        }
+                    });
+                    return response.status !== 404;
+                } catch (error) {
+                    console.error('Error de conexión:', error);
+                    return false;
+                }
+            }
+
             async buscarProductos(producto) {
                 try {
+                    console.log(`Realizando petición a: ${this.baseURL}/mercadolibre`);
+                    
                     const respuesta = await fetch(`${this.baseURL}/mercadolibre`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
+                            'Accept': 'application/json'
                         },
                         body: JSON.stringify({ producto })
                     });
 
                     if (!respuesta.ok) {
-                        throw new Error(`¡Error HTTP! estado: ${respuesta.status}`);
+                        const errorText = await respuesta.text();
+                        throw new Error(`Error HTTP ${respuesta.status}: ${errorText}`);
                     }
 
                     const datos = await respuesta.json();
                     return datos;
                 } catch (error) {
-                    console.error('Error al buscar productos:', error);
-                    throw error;
+                    console.error('Error detallado:', error);
+                    throw new Error(`Error al buscar productos: ${error.message}`);
                 }
             }
 
@@ -107,7 +189,7 @@
                     });
 
                     if (!respuesta.ok) {
-                        throw new Error(`¡Error HTTP! estado: ${respuesta.status}`);
+                        throw new Error(`Error HTTP ${respuesta.status}`);
                     }
 
                     const blob = await respuesta.blob();
@@ -127,10 +209,34 @@
             }
         }
 
-        // Instancia de la API
-        const api = new MercadoLibreAPI();
+        let api = new MercadoLibreAPI();
 
-        // Función para iniciar la búsqueda desde la interfaz
+        async function verificarEstadoServidor() {
+            const statusDiv = document.getElementById('serverStatus');
+            const conectado = await api.verificarConexion();
+            
+            if (conectado) {
+                statusDiv.className = 'status-ok';
+                statusDiv.innerHTML = '✓ Servidor conectado';
+            } else {
+                statusDiv.className = 'status-error';
+                statusDiv.innerHTML = '✗ No se puede conectar al servidor. Verifica que:' +
+                    '<ul>' +
+                    '<li>El servidor esté corriendo en el puerto correcto</li>' +
+                    '<li>La URL del servidor sea correcta</li>' +
+                    '<li>El servidor tenga CORS habilitado</li>' +
+                    '</ul>';
+            }
+        }
+
+        function actualizarURL() {
+            const newUrl = document.getElementById('serverUrl').value.trim();
+            if (newUrl) {
+                api = new MercadoLibreAPI(newUrl);
+                verificarEstadoServidor();
+            }
+        }
+
         async function iniciarBusqueda() {
             const searchInput = document.getElementById('searchInput');
             const loadingDiv = document.getElementById('loading');
@@ -147,27 +253,55 @@
             try {
                 const resultado = await api.buscarProductos(searchInput.value);
                 
-                let html = `<h3>Se encontraron ${resultado.num_products} productos</h3>`;
-                html += '<button onclick="descargarResultados()">Descargar Excel</button>';
-                html += '<ul>';
+                let html = `
+                    <div class="results-header">
+                        <h3>Se encontraron ${resultado.num_products} productos</h3>
+                        <button onclick="descargarResultados()">Descargar Excel</button>
+                    </div>
+                    <table class="results-table">
+                        <thead>
+                            <tr>
+                                <th>Título</th>
+                                <th>Precio</th>
+                                <th>Condición</th>
+                                <th>Envío Gratis</th>
+                                <th>Vendedor</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                
                 resultado.datos.forEach(producto => {
-                    html += `<li>${producto.titulo} - $${producto.precio}</li>`;
+                    html += `
+                        <tr>
+                            <td>${producto.titulo}</td>
+                            <td class="price">$${producto.precio.toLocaleString('es-AR')}</td>
+                            <td>${producto.condicion || 'No especificada'}</td>
+                            <td>${producto.envio_gratis ? 'Sí' : 'No'}</td>
+                            <td>${producto.vendedor || 'No especificado'}</td>
+                        </tr>
+                    `;
                 });
-                html += '</ul>';
                 
+                html += '</tbody></table>';
                 resultsDiv.innerHTML = html;
-                
-                // Guardar los datos para la descarga
                 window.ultimosResultados = resultado.datos;
                 
             } catch (error) {
-                resultsDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+                resultsDiv.innerHTML = `
+                    <div class="error">
+                        <strong>Error:</strong> ${error.message}
+                        <div class="debug-info">
+                            URL del servidor: ${api.baseURL}<br>
+                            Navegador: ${navigator.userAgent}<br>
+                            Timestamp: ${new Date().toISOString()}
+                        </div>
+                    </div>`;
             } finally {
                 loadingDiv.style.display = 'none';
             }
         }
 
-        // Función para descargar resultados en Excel
         async function descargarResultados() {
             if (!window.ultimosResultados) {
                 alert('No hay resultados para descargar');
@@ -181,6 +315,238 @@
                 alert(`Error al descargar Excel: ${error.message}`);
             }
         }
+
+        // Verificar estado del servidor al cargar la página
+        verificarEstadoServidor();
+    </script>
+</body>
+</html> -->
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buscador MercadoLibre</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-blue-600 mb-2">Buscador de MercadoLibre</h1>
+            <p class="text-gray-600">Busca productos y descarga los resultados en Excel</p>
+        </header>
+
+        <!-- Search Form -->
+        <div class="max-w-xl mx-auto bg-white rounded-lg shadow-md p-6 mb-8">
+            <div class="flex gap-4">
+                <input 
+                    type="text" 
+                    id="searchInput" 
+                    placeholder="¿Qué producto buscas?" 
+                    class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
+                >
+                <button 
+                    onclick="handleSearch()" 
+                    class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                    Buscar
+                </button>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loading" class="hidden">
+            <div class="flex justify-center items-center mb-8">
+                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            </div>
+        </div>
+
+        <!-- Error Message -->
+        <div id="error" class="hidden max-w-xl mx-auto bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-8">
+        </div>
+
+        <!-- Results Section -->
+        <div id="resultsSection" class="hidden">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-semibold text-gray-800">Resultados de la búsqueda</h2>
+                <button 
+                    onclick="handleDownload()" 
+                    class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+                >
+                    <i class="fas fa-file-excel"></i>
+                    Descargar Excel
+                </button>
+            </div>
+            <div id="results" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- Results will be inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Constants for API endpoints
+        const API_BASE_URL = 'http://localhost:5000';
+        const SEARCH_ENDPOINT = `${API_BASE_URL}/mercadolibre`;
+        const DOWNLOAD_ENDPOINT = `${API_BASE_URL}/descargarExcel`;
+
+        let lastSearchResults = null;
+
+        class MercadoLibreAPI {
+            static async searchProducts(productName) {
+                try {
+                    const response = await fetch(SEARCH_ENDPOINT, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ producto: productName })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Error en la búsqueda: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    return data;
+                } catch (error) {
+                    console.error('Error searching products:', error);
+                    throw error;
+                }
+            }
+
+            static async downloadExcel(searchData) {
+                try {
+                    const formData = new FormData();
+                    formData.append('data', JSON.stringify(searchData));
+
+                    const response = await fetch(DOWNLOAD_ENDPOINT, {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Error al descargar: ${response.status}`);
+                    }
+
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'productos_mercadolibre.xlsx';
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                } catch (error) {
+                    console.error('Error downloading Excel:', error);
+                    throw error;
+                }
+            }
+        }
+
+        function formatPrice(price) {
+            if (price === 'N/A') return 'Precio no disponible';
+            return price;
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.classList.remove('hidden');
+            setTimeout(() => {
+                errorDiv.classList.add('hidden');
+            }, 5000);
+        }
+
+        function setLoading(isLoading) {
+            document.getElementById('loading').style.display = isLoading ? 'block' : 'none';
+        }
+
+        async function handleSearch() {
+            const searchInput = document.getElementById('searchInput');
+            const resultsSection = document.getElementById('resultsSection');
+            const searchTerm = searchInput.value.trim();
+
+            if (!searchTerm) {
+                showError('Por favor ingresa un término de búsqueda');
+                return;
+            }
+
+            try {
+                setLoading(true);
+                resultsSection.classList.add('hidden');
+                
+                const searchResults = await MercadoLibreAPI.searchProducts(searchTerm);
+                lastSearchResults = searchResults;
+
+                const resultsDiv = document.getElementById('results');
+                resultsDiv.innerHTML = searchResults.datos
+                    .map(product => `
+                        <div class="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
+                            <div class="h-48 overflow-hidden">
+                                <img 
+                                    src="${product.imagenes !== 'N/A' ? product.imagenes : '/api/placeholder/400/300'}" 
+                                    alt="${product.titulo}"
+                                    class="w-full h-full object-cover"
+                                >
+                            </div>
+                            <div class="p-4">
+                                <h3 class="text-lg font-semibold text-gray-800 mb-2 line-clamp-2">${product.titulo}</h3>
+                                <div class="space-y-1">
+                                    <p class="text-xl font-bold text-blue-600">${formatPrice(product.precio_con_descuento)}</p>
+                                    ${product.descuento !== 'N/A' ? 
+                                        `<p class="text-green-600 font-semibold">${product.descuento}</p>` : 
+                                        ''}
+                                    <p class="text-gray-600">Vendedor: ${product.vendedor}</p>
+                                    ${product.cantidad_vendida !== 'N/A' ? 
+                                        `<p class="text-sm text-gray-500">${product.cantidad_vendida} vendidos</p>` : 
+                                        ''}
+                                </div>
+                                <a 
+                                    href="${product.url_producto}" 
+                                    target="_blank" 
+                                    class="mt-4 inline-block text-blue-600 hover:text-blue-700"
+                                >
+                                    Ver en MercadoLibre →
+                                </a>
+                            </div>
+                        </div>
+                    `)
+                    .join('');
+
+                resultsSection.classList.remove('hidden');
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        async function handleDownload() {
+            if (!lastSearchResults) {
+                showError('No hay resultados para descargar');
+                return;
+            }
+
+            try {
+                setLoading(true);
+                await MercadoLibreAPI.downloadExcel(lastSearchResults);
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        // Allow search with Enter key
+        document.getElementById('searchInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                handleSearch();
+            }
+        });
     </script>
 </body>
 </html>
