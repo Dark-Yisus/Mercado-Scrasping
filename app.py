@@ -12,142 +12,149 @@ from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 from io import BytesIO
 
-# Inicialización de la aplicación Flask y configuración de CORS
+# Initialize Flask app and configure CORS
 app = Flask(__name__)
-CORS(app)  # Permite peticiones desde cualquier origen
+CORS(app, resources={r"/*": {"origins": "*"}})
 
-# Configuración del sistema de logs
-logging.basicConfig(level=logging.INFO)
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-# Conexión a MongoDB
-client = MongoClient('mongodb://localhost:27017/')
-db = client['mercadolibre_db']
-collection = db['productos']
+# MongoDB connection
+try:
+    client = MongoClient('mongodb://localhost:27017/')
+    db = client['mercadolibre_db']
+    collection = db['productos']
+    logger.info("Successfully connected to MongoDB")
+except Exception as e:
+    logger.error(f"Failed to connect to MongoDB: {e}")
 
-def extraer_detalles_producto(url_producto, headers):
+def extract_product_details(url_producto, headers):
     """
-    Extrae los detalles de un producto de MercadoLibre dado su URL
+    Extracts product details from a MercadoLibre product URL
     """
     try:
         r_producto = None
-        # Intentar obtener la página hasta 3 veces
-        for _ in range(3):
-            r_producto = requests.get(url_producto, headers=headers)
+        for _ in range(3):  # Try up to 3 times
+            r_producto = requests.get(url_producto, headers=headers, timeout=10)
             if r_producto.status_code == 200:
                 break
 
-        if r_producto and r_producto.status_code == 200:
-            soup_producto = BeautifulSoup(r_producto.content, 'html.parser')
+        if not r_producto or r_producto.status_code != 200:
+            logger.warning(f"Failed to fetch product page: {url_producto}")
+            return None
 
-            # Extraer información del vendedor
-            vendedor_tag = soup_producto.find('div', class_='ui-pdp-seller__header__title')
-            vendedor = vendedor_tag.get_text(strip=True) if vendedor_tag else 'N/A'
-            
-            # Inicializar variables de precios
-            precio_original = 'N/A'
-            precio_con_descuento = 'N/A'
-            descuento = 'N/A'
+        soup_producto = BeautifulSoup(r_producto.content, 'html.parser')
 
-            # Extraer precio original
-            precio_original_tag = soup_producto.find('s', class_='andes-money-amount ui-pdp-price__part ui-pdp-price__original-value andes-money-amount--previous andes-money-amount--cents-superscript andes-money-amount--compact')
-            if precio_original_tag:
-                precio_original = precio_original_tag.text.strip()
+        # Extract seller information
+        vendedor_tag = soup_producto.find('div', class_='ui-pdp-seller__header__title')
+        vendedor = vendedor_tag.get_text(strip=True) if vendedor_tag else 'N/A'
 
-            # Extraer precio con descuento
-            precio_con_descuento_tag = soup_producto.find('div', class_='ui-pdp-price__second-line')
-            if precio_con_descuento_tag:
-                precio_descuento = precio_con_descuento_tag.find('span', class_='andes-money-amount__fraction')
-                if precio_descuento:
-                    precio_con_descuento = precio_descuento.text.strip()
+        # Extract prices
+        precio_original = 'N/A'
+        precio_con_descuento = 'N/A'
+        descuento = 'N/A'
 
-            # Extraer porcentaje de descuento
-            descuento_tag = soup_producto.find('span', class_='ui-pdp-price__second-line__label')
-            if descuento_tag:
-                descuento = descuento_tag.text.strip()
+        precio_original_tag = soup_producto.find('s', class_='andes-money-amount ui-pdp-price__part ui-pdp-price__original-value andes-money-amount--previous andes-money-amount--cents-superscript andes-money-amount--compact')
+        if precio_original_tag:
+            precio_original = precio_original_tag.text.strip()
 
-            # Extraer información de cuotas
-            cuotas_pago = 'N/A'
-            cuotas_container = soup_producto.find('div', class_='ui-pdp-payment')
-            if cuotas_container:
-                cuotas_text = cuotas_container.get_text(strip=True)
-                cuotas_match = re.search(r'(\d+)x\s*(\$[\d,.]+)\s*(sin interés|con interés)?', cuotas_text)
-                if cuotas_match:
-                    cuotas_pago = f"{cuotas_match.group(1)}x {cuotas_match.group(2)} {cuotas_match.group(3) or ''}"
+        precio_con_descuento_tag = soup_producto.find('div', class_='ui-pdp-price__second-line')
+        if precio_con_descuento_tag:
+            precio_descuento = precio_con_descuento_tag.find('span', class_='andes-money-amount__fraction')
+            if precio_descuento:
+                precio_con_descuento = precio_descuento.text.strip()
 
-            # Extraer información de meses sin intereses
-            meses_sin_intereses = 'N/A'
-            meses_sin_intereses_tag = soup_producto.find('span', class_='ui-pdp-color--GREEN')
-            if meses_sin_intereses_tag:
-                meses_sin_intereses = meses_sin_intereses_tag.get_text(strip=True)
+        # Extract discount percentage
+        descuento_tag = soup_producto.find('span', class_='ui-pdp-price__second-line__label')
+        if descuento_tag:
+            descuento = descuento_tag.text.strip()
 
-            # Extraer información de envío
-            envio_tag = soup_producto.find('p', class_='ui-pdp-color--BLACK ui-pdp-family--REGULAR ui-pdp-media__title')
-            envio = envio_tag.get_text(strip=True) if envio_tag else 'N/A'
+        # Extract payment installments
+        cuotas_pago = 'N/A'
+        cuotas_container = soup_producto.find('div', class_='ui-pdp-payment')
+        if cuotas_container:
+            cuotas_text = cuotas_container.get_text(strip=True)
+            cuotas_match = re.search(r'(\d+)x\s*(\$[\d,.]+)\s*(sin interés|con interés)?', cuotas_text)
+            if cuotas_match:
+                cuotas_pago = f"{cuotas_match.group(1)}x {cuotas_match.group(2)} {cuotas_match.group(3) or ''}"
 
-            # Extraer cantidad vendida
-            cantidad_vendida = 'N/A'
-            cantidad_tag = soup_producto.find('span', class_='ui-pdp-subtitle')
-            if cantidad_tag:
-                cantidad_match = re.search(r'(\d+)\s+vendidos?', cantidad_tag.text)
-                if cantidad_match:
-                    cantidad_vendida = cantidad_match.group(1)
+        # Extract interest-free months
+        meses_sin_intereses = 'N/A'
+        meses_sin_intereses_tag = soup_producto.find('span', class_='ui-pdp-color--GREEN')
+        if meses_sin_intereses_tag:
+            meses_sin_intereses = meses_sin_intereses_tag.get_text(strip=True)
 
-            # Extraer URL de la imagen
-            imagen_tag = soup_producto.find('img', class_='ui-pdp-image ui-pdp-gallery__figure__image')
-            imagen = imagen_tag['src'] if imagen_tag and 'src' in imagen_tag.attrs else 'N/A'
+        # Extract shipping information
+        envio_tag = soup_producto.find('p', class_='ui-pdp-color--BLACK ui-pdp-family--REGULAR ui-pdp-media__title')
+        envio = envio_tag.get_text(strip=True) if envio_tag else 'N/A'
 
-            # Devolver todos los datos extraídos
-            return {
-                'vendedor': vendedor,
-                'precio_original': precio_original,
-                'precio_con_descuento': precio_con_descuento,
-                'descuento': descuento,
-                'cuotas': cuotas_pago,
-                'meses_sin_intereses': meses_sin_intereses,
-                'envios': envio,
-                'cantidad_vendida': cantidad_vendida,
-                'imagenes': imagen
-            }
-        return None
+        # Extract number of items sold
+        cantidad_vendida = 'N/A'
+        cantidad_tag = soup_producto.find('span', class_='ui-pdp-subtitle')
+        if cantidad_tag:
+            cantidad_match = re.search(r'(\d+)\s+vendidos?', cantidad_tag.text)
+            if cantidad_match:
+                cantidad_vendida = cantidad_match.group(1)
+
+        # Extract image URL
+        imagen_tag = soup_producto.find('img', class_='ui-pdp-image ui-pdp-gallery__figure__image')
+        imagen = imagen_tag['src'] if imagen_tag and 'src' in imagen_tag.attrs else 'N/A'
+
+        return {
+            'vendedor': vendedor,
+            'precio_original': precio_original,
+            'precio_con_descuento': precio_con_descuento,
+            'descuento': descuento,
+            'cuotas': cuotas_pago,
+            'meses_sin_intereses': meses_sin_intereses,
+            'envios': envio,
+            'cantidad_vendida': cantidad_vendida,
+            'imagenes': imagen
+        }
     except Exception as e:
-        logger.error(f"Error al procesar la página del producto {url_producto}: {e}")
+        logger.error(f"Error processing product page {url_producto}: {e}")
         return None
 
-def buscar_producto_api(producto):
+def search_product_api(producto):
     """
-    Busca productos en la API de MercadoLibre
+    Searches for products using the MercadoLibre API
     """
     try:
         url = f'https://api.mercadolibre.com/sites/MLM/search?q={producto}'
-        response = requests.get(url)
+        response = requests.get(url, timeout=10)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
-        logger.error(f"Error al buscar producto en la API: {e}")
+        logger.error(f"Error searching product in API: {e}")
         return None
 
-def guardar_productos_en_db(datos_productos):
+def save_products_to_db(productos_data):
     """
-    Guarda o actualiza los productos en MongoDB
+    Saves or updates products in MongoDB
     """
-    if datos_productos:
-        try:
-            operations = []
-            for producto in datos_productos:
-                filter_query = {"url_producto": producto["url_producto"]}
-                update_query = {"$set": producto}
-                operations.append(UpdateOne(filter_query, update_query, upsert=True))
-            
-            result = collection.bulk_write(operations)
-            logger.info(f"Se han guardado/actualizado {result.upserted_count + result.modified_count} productos en la base de datos.")
-        except Exception as e:
-            logger.error(f"Error al insertar/actualizar productos en MongoDB: {e}")
+    if not productos_data:
+        return
+
+    try:
+        operations = []
+        for producto in productos_data:
+            filter_query = {"url_producto": producto["url_producto"]}
+            update_query = {"$set": producto}
+            operations.append(UpdateOne(filter_query, update_query, upsert=True))
+        
+        result = collection.bulk_write(operations)
+        logger.info(f"Saved/updated {result.upserted_count + result.modified_count} products in database")
+    except Exception as e:
+        logger.error(f"Error inserting/updating products in MongoDB: {e}")
 
 @app.route('/mercadolibre', methods=['POST', 'OPTIONS'])
-def buscar_productos():
+def search_products():
     """
-    Endpoint principal para buscar productos
+    Main endpoint for product search
     """
     if request.method == 'OPTIONS':
         return '', 200
@@ -155,7 +162,7 @@ def buscar_productos():
     try:
         data = request.get_json()
         if not data or 'producto' not in data:
-            return jsonify({'error': 'No se proporcionó un producto'}), 400
+            return jsonify({'error': 'No product provided'}), 400
         
         producto = data['producto']
         headers = {
@@ -165,13 +172,13 @@ def buscar_productos():
         start_time = datetime.now()
         productos_a_guardar = []
 
-        resultado_api = buscar_producto_api(producto)
+        resultado_api = search_product_api(producto)
         if not resultado_api:
-            return jsonify({'error': 'Error al buscar productos'}), 500
+            return jsonify({'error': 'Error searching products'}), 500
 
         for item in resultado_api['results']:
             url_producto = item['permalink']
-            detalles = extraer_detalles_producto(url_producto, headers)
+            detalles = extract_product_details(url_producto, headers)
 
             if detalles:
                 producto_data = {
@@ -182,21 +189,22 @@ def buscar_productos():
                 }
                 productos_a_guardar.append(producto_data)
 
-        guardar_productos_en_db(productos_a_guardar)
+        save_products_to_db(productos_a_guardar)
 
         return jsonify({
             "datos": productos_a_guardar,
             "num_products": len(productos_a_guardar),
             "processing_time": (datetime.now() - start_time).total_seconds()
         })
+
     except Exception as e:
-        logger.error(f"Error inesperado: {str(e)}")
+        logger.error(f"Unexpected error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/descargarExcel', methods=['POST', 'OPTIONS'])
-def descargar_excel():
+def download_excel():
     """
-    Endpoint para descargar los resultados en formato Excel
+    Endpoint to download results in Excel format
     """
     if request.method == 'OPTIONS':
         return '', 200
@@ -204,23 +212,23 @@ def descargar_excel():
     try:
         data = json_util.loads(request.form.get('data'))
         
-        # Crear DataFrame con los datos
+        # Create DataFrame
         df = pd.DataFrame(data['datos'])
         
-        # Crear libro de Excel
+        # Create Excel workbook
         wb = Workbook()
         ws = wb.active
         ws.title = "Productos MercadoLibre"
         
-        # Agregar encabezados
+        # Add headers
         headers = list(df.columns)
         ws.append(headers)
         
-        # Agregar datos
+        # Add data
         for _, row in df.iterrows():
             ws.append(row.tolist())
         
-        # Ajustar ancho de columnas
+        # Adjust column widths
         for column in ws.columns:
             max_length = 0
             column_letter = get_column_letter(column[0].column)
@@ -233,12 +241,11 @@ def descargar_excel():
             adjusted_width = (max_length + 2) * 1.2
             ws.column_dimensions[column_letter].width = adjusted_width
         
-        # Guardar Excel en memoria
+        # Save Excel to memory
         excel_file = BytesIO()
         wb.save(excel_file)
         excel_file.seek(0)
         
-        # Enviar archivo
         return send_file(
             excel_file,
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -246,8 +253,8 @@ def descargar_excel():
             download_name='productos_mercadolibre.xlsx'
         )
     except Exception as e:
-        logger.error(f"Error al generar el archivo Excel: {str(e)}")
+        logger.error(f"Error generating Excel file: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=False)
