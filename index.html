@@ -40,6 +40,10 @@
         button:hover {
             background-color: #0052a3;
         }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
         #results {
             margin-top: 20px;
         }
@@ -53,6 +57,26 @@
             color: red;
             margin-top: 10px;
             display: none;
+            padding: 10px;
+            background-color: #ffebee;
+            border-radius: 4px;
+        }
+        .product-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .product-card {
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .product-card img {
+            width: 100%;
+            height: auto;
+            max-height: 200px;
+            object-fit: contain;
         }
     </style>
 </head>
@@ -62,7 +86,7 @@
         
         <div class="search-box">
             <input type="text" id="searchInput" placeholder="Ingrese el producto a buscar...">
-            <button onclick="buscarProducto()">Buscar</button>
+            <button id="searchButton" onclick="buscarProducto()">Buscar</button>
         </div>
 
         <div id="loading" class="loading">Buscando productos...</div>
@@ -71,7 +95,7 @@
         <div id="results"></div>
         
         <div id="downloadSection" style="display: none; margin-top: 20px;">
-            <button onclick="descargarExcel()">Descargar Excel</button>
+            <button id="downloadButton" onclick="descargarExcel()">Descargar Excel</button>
         </div>
     </div>
 
@@ -91,14 +115,27 @@
                         body: JSON.stringify({ producto })
                     });
 
-                    if (!respuesta.ok) {
-                        const datosError = await respuesta.json();
-                        throw new Error(datosError.error || 'Error al buscar productos');
+                    // Verificar el tipo de contenido de la respuesta
+                    const contentType = respuesta.headers.get("content-type");
+                    if (!contentType || !contentType.includes("application/json")) {
+                        throw new Error("La respuesta del servidor no es JSON válido. Por favor, verifica la URL de la API y su funcionamiento.");
                     }
 
-                    return await respuesta.json();
+                    if (!respuesta.ok) {
+                        const datosError = await respuesta.json();
+                        throw new Error(datosError.error || `Error ${respuesta.status}: ${respuesta.statusText}`);
+                    }
+
+                    const datos = await respuesta.json();
+                    if (!datos || typeof datos !== 'object') {
+                        throw new Error('Formato de respuesta inválido');
+                    }
+
+                    return datos;
                 } catch (error) {
-                    console.error('Error al buscar productos:', error);
+                    if (error.message.includes('Failed to fetch')) {
+                        throw new Error('No se pudo conectar con el servidor. Verifica tu conexión a internet y la URL de la API.');
+                    }
                     throw error;
                 }
             }
@@ -114,8 +151,13 @@
                     });
 
                     if (!respuesta.ok) {
-                        const datosError = await respuesta.json();
-                        throw new Error(datosError.error || 'Error al descargar el archivo Excel');
+                        const contentType = respuesta.headers.get("content-type");
+                        if (contentType && contentType.includes("application/json")) {
+                            const datosError = await respuesta.json();
+                            throw new Error(datosError.error || 'Error al descargar el archivo Excel');
+                        } else {
+                            throw new Error(`Error ${respuesta.status}: ${respuesta.statusText}`);
+                        }
                     }
 
                     const blob = await respuesta.blob();
@@ -138,6 +180,7 @@
 
         async function buscarProducto() {
             const searchInput = document.getElementById('searchInput');
+            const searchButton = document.getElementById('searchButton');
             const loading = document.getElementById('loading');
             const error = document.getElementById('error');
             const results = document.getElementById('results');
@@ -149,6 +192,8 @@
                 return;
             }
 
+            // Deshabilitar botón durante la búsqueda
+            searchButton.disabled = true;
             loading.style.display = 'block';
             error.style.display = 'none';
             results.innerHTML = '';
@@ -158,7 +203,18 @@
                 lastResults = await ClienteMercadoLibre.buscarProductos(searchInput.value);
                 
                 if (lastResults.datos && lastResults.datos.length > 0) {
-                    results.innerHTML = `<h2>Resultados encontrados: ${lastResults.datos.length}</h2>`;
+                    results.innerHTML = `
+                        <h2>Resultados encontrados: ${lastResults.datos.length}</h2>
+                        <div class="product-grid">
+                            ${lastResults.datos.map(producto => `
+                                <div class="product-card">
+                                    <img src="${producto.imagen || '/api/placeholder/200/200'}" alt="${producto.titulo}">
+                                    <h3>${producto.titulo}</h3>
+                                    <p>Precio: ${producto.precio}</p>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
                     downloadSection.style.display = 'block';
                 } else {
                     results.innerHTML = '<p>No se encontraron resultados</p>';
@@ -166,8 +222,10 @@
             } catch (err) {
                 error.textContent = err.message || 'Error al buscar productos';
                 error.style.display = 'block';
+                console.error('Error detallado:', err);
             } finally {
                 loading.style.display = 'none';
+                searchButton.disabled = false;
             }
         }
 
@@ -176,7 +234,10 @@
                 return;
             }
 
+            const downloadButton = document.getElementById('downloadButton');
             const error = document.getElementById('error');
+            
+            downloadButton.disabled = true;
             error.style.display = 'none';
 
             try {
@@ -184,6 +245,8 @@
             } catch (err) {
                 error.textContent = err.message || 'Error al descargar el Excel';
                 error.style.display = 'block';
+            } finally {
+                downloadButton.disabled = false;
             }
         }
 
