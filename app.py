@@ -12,9 +12,22 @@ from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 from io import BytesIO
 
-# Initialize Flask app and configure CORS
+# Initialize Flask app
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
+
+# Configure CORS with specific origins and methods
+CORS(app, resources={
+    r"/mercadolibre": {
+        "origins": ["http://mercado-scraping.shop", "https://mercado-scraping.shop"],
+        "methods": ["POST", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    },
+    r"/descargarExcel": {
+        "origins": ["http://mercado-scraping.shop", "https://mercado-scraping.shop"],
+        "methods": ["POST", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
 
 # Configure logging
 logging.basicConfig(
@@ -31,6 +44,15 @@ try:
     logger.info("Successfully connected to MongoDB")
 except Exception as e:
     logger.error(f"Failed to connect to MongoDB: {e}")
+
+# CORS middleware
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', 'https://mercado-scraping.shop')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    return response
 
 def extract_product_details(url_producto, headers):
     """
@@ -157,12 +179,12 @@ def search_products():
     Main endpoint for product search
     """
     if request.method == 'OPTIONS':
-        return '', 200
+        return '', 204
         
     try:
         data = request.get_json()
         if not data or 'producto' not in data:
-            return jsonify({'error': 'No product provided'}), 400
+            return jsonify({'error': 'No se proporcionó ningún producto'}), 400
         
         producto = data['producto']
         headers = {
@@ -198,7 +220,7 @@ def search_products():
         })
 
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
+        logger.error(f"Error inesperado: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/descargarExcel', methods=['POST', 'OPTIONS'])
@@ -207,7 +229,7 @@ def download_excel():
     Endpoint to download results in Excel format
     """
     if request.method == 'OPTIONS':
-        return '', 200
+        return '', 204
     
     try:
         data = json_util.loads(request.form.get('data'))
@@ -257,4 +279,9 @@ def download_excel():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    app.run(
+        host='0.0.0.0', 
+        port=5000, 
+        ssl_context=('cert.pem', 'key.pem'),
+        debug=False
+    )
