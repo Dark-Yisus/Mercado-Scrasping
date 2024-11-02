@@ -1,180 +1,141 @@
 <?php
-// index.php
-header('Content-Type: text/html; charset=utf-8');
-?>
+// config.php
+define('API_URL', 'https://mercado-scraping.shop');
 
+// index.php
+?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Buscador MercadoLibre</title>
+    <title>Búsqueda MercadoLibre</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        .producto-card {
-            border: 1px solid #ddd;
-            padding: 15px;
-            margin: 10px;
-            border-radius: 8px;
-        }
-        .producto-imagen {
-            max-width: 200px;
-            height: auto;
-        }
-        #loading {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 1000;
-            background: rgba(255, 255, 255, 0.8);
-            padding: 20px;
-            border-radius: 10px;
-            display: none;
-        }
-    </style>
 </head>
 <body>
     <div class="container mt-4">
-        <h2 class="mb-4">Buscador de Productos en MercadoLibre</h2>
+        <h1>Búsqueda de Productos en MercadoLibre</h1>
         
-        <form id="searchForm" class="mb-4">
-            <div class="row">
-                <div class="col-md-8">
-                    <input type="text" id="producto" class="form-control" 
-                           placeholder="Ingrese el producto a buscar" required>
-                </div>
-                <div class="col-md-4">
-                    <button type="submit" class="btn btn-primary">Buscar</button>
-                </div>
+        <form method="POST" action="" class="mb-4">
+            <div class="form-group">
+                <input type="text" name="producto" class="form-control" 
+                       placeholder="Ingrese producto a buscar" required
+                       value="<?php echo isset($_POST['producto']) ? htmlspecialchars($_POST['producto']) : ''; ?>">
             </div>
+            <button type="submit" class="btn btn-primary mt-2">Buscar</button>
         </form>
 
-        <div id="loading" class="text-center">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">Cargando...</span>
-            </div>
-            <p class="mt-2">Buscando productos...</p>
-        </div>
-
-        <div id="error" class="alert alert-danger" style="display: none;"></div>
-        
-        <div id="resultados" class="row"></div>
-    </div>
-
-    <script>
-        const API_URL = '<?php echo getenv("API_URL") ?: "http://localhost:5000"; ?>';
-
-        async function buscarProductos(producto) {
-            try {
-                const response = await fetch(`${API_URL}/mercadolibre`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify({ producto: producto })
-                });
-
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`Error en la petición: ${response.status} ${errorText}`);
-                }
-
-                return await response.json();
-            } catch (error) {
-                console.error('Error:', error);
-                throw error;
-            }
-        }
-
-        async function descargarExcel(data) {
-            try {
-                const formData = new FormData();
-                formData.append('data', JSON.stringify(data));
-
-                const response = await fetch(`${API_URL}/descargarExcel`, {
-                    method: 'POST',
-                    body: formData
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Error en la descarga: ${response.status}`);
-                }
-
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'productos_mercadolibre.xlsx';
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
-            } catch (error) {
-                console.error('Error al descargar Excel:', error);
-                throw error;
-            }
-        }
-
-        document.getElementById('searchForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
+        <?php
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['producto'])) {
+            $producto = $_POST['producto'];
             
-            const loading = document.getElementById('loading');
-            const error = document.getElementById('error');
-            const resultados = document.getElementById('resultados');
+            // Inicializar cURL para la búsqueda
+            $ch = curl_init(API_URL . '/mercadolibre');
             
-            loading.style.display = 'block';
-            error.style.display = 'none';
-            resultados.innerHTML = '';
-
-            try {
-                const producto = document.getElementById('producto').value;
-                const resultado = await buscarProductos(producto);
+            // Configurar la petición POST
+            $postData = json_encode(['producto' => $producto]);
+            curl_setopt_array($ch, [
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => $postData,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/json',
+                    'Content-Length: ' . strlen($postData)
+                ]
+            ]);
+            
+            // Ejecutar la petición
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            
+            if ($httpCode === 200) {
+                $data = json_decode($response, true);
                 
-                if (resultado.datos && resultado.datos.length > 0) {
-                    resultado.datos.forEach(producto => {
-                        const card = document.createElement('div');
-                        card.className = 'col-md-4 mb-4';
-                        card.innerHTML = `
-                            <div class="producto-card">
-                                <img src="${producto.imagenes}" alt="${producto.titulo}" 
-                                     class="producto-imagen mb-3">
-                                <h5>${producto.titulo}</h5>
-                                <p class="mb-2">Precio: ${producto.precio_con_descuento}</p>
-                                <p class="mb-2">Vendedor: ${producto.vendedor}</p>
-                                ${producto.descuento !== 'N/A' ? 
-                                    `<p class="text-success">Descuento: ${producto.descuento}</p>` : ''}
-                                <p class="mb-2">Envío: ${producto.envios}</p>
-                                <a href="${producto.url_producto}" target="_blank" 
-                                   class="btn btn-sm btn-primary">Ver en MercadoLibre</a>
+                if (isset($data['datos']) && !empty($data['datos'])) {
+                    ?>
+                    <div class="mb-3">
+                        <h3>Resultados encontrados: <?php echo count($data['datos']); ?></h3>
+                        <p>Tiempo de procesamiento: <?php echo $data['processing_time']; ?> segundos</p>
+                        
+                        <form method="POST" action="download.php">
+                            <input type="hidden" name="data" value="<?php echo htmlspecialchars(json_encode($data)); ?>">
+                            <button type="submit" class="btn btn-success">Descargar Excel</button>
+                        </form>
+                    </div>
+
+                    <?php foreach ($data['datos'] as $producto): ?>
+                        <div class="card mb-3">
+                            <div class="row g-0">
+                                <div class="col-md-4">
+                                    <img src="<?php echo htmlspecialchars($producto['imagenes']); ?>" 
+                                         class="img-fluid rounded-start" 
+                                         alt="<?php echo htmlspecialchars($producto['titulo']); ?>">
+                                </div>
+                                <div class="col-md-8">
+                                    <div class="card-body">
+                                        <h5 class="card-title"><?php echo htmlspecialchars($producto['titulo']); ?></h5>
+                                        <p class="card-text">Vendedor: <?php echo htmlspecialchars($producto['vendedor']); ?></p>
+                                        <p class="card-text">Precio original: <?php echo htmlspecialchars($producto['precio_original']); ?></p>
+                                        <p class="card-text">Precio con descuento: <?php echo htmlspecialchars($producto['precio_con_descuento']); ?></p>
+                                        <p class="card-text">Descuento: <?php echo htmlspecialchars($producto['descuento']); ?></p>
+                                        <p class="card-text">Cuotas: <?php echo htmlspecialchars($producto['cuotas']); ?></p>
+                                        <p class="card-text">Envío: <?php echo htmlspecialchars($producto['envios']); ?></p>
+                                        <p class="card-text">Cantidad vendida: <?php echo htmlspecialchars($producto['cantidad_vendida']); ?></p>
+                                        <a href="<?php echo htmlspecialchars($producto['url_producto']); ?>" 
+                                           target="_blank" 
+                                           class="btn btn-primary">Ver en MercadoLibre</a>
+                                    </div>
+                                </div>
                             </div>
-                        `;
-                        resultados.appendChild(card);
-                    });
-
-                    // Agregar botón para descargar Excel
-                    const excelButton = document.createElement('div');
-                    excelButton.className = 'col-12 text-center mt-3';
-                    excelButton.innerHTML = `
-                        <button onclick="descargarExcel(${JSON.stringify(resultado)})" 
-                                class="btn btn-success">
-                            Descargar Excel
-                        </button>
-                    `;
-                    resultados.appendChild(excelButton);
+                        </div>
+                    <?php endforeach;
                 } else {
-                    resultados.innerHTML = '<div class="col-12"><p>No se encontraron productos</p></div>';
+                    echo '<div class="alert alert-info">No se encontraron productos</div>';
                 }
-            } catch (error) {
-                error.style.display = 'block';
-                error.textContent = error.message;
-            } finally {
-                loading.style.display = 'none';
+            } else {
+                echo '<div class="alert alert-danger">Error al buscar productos</div>';
             }
-        });
-    </script>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+            
+            curl_close($ch);
+        }
+        ?>
+    </div>
 </body>
 </html>
+
+<?php
+// download.php
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['data'])) {
+    $data = $_POST['data'];
+    
+    $ch = curl_init(API_URL . '/descargarExcel');
+    
+    $postData = [
+        'data' => $data
+    ];
+    
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => $postData,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    
+    if ($httpCode === 200) {
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename="productos_mercadolibre.xlsx"');
+        header('Cache-Control: max-age=0');
+        
+        echo $response;
+    } else {
+        header('HTTP/1.1 500 Internal Server Error');
+        echo json_encode(['error' => 'Error al descargar el archivo']);
+    }
+    
+    curl_close($ch);
+    exit;
+}
+?>

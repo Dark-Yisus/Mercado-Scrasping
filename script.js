@@ -1,111 +1,125 @@
-// Módulo cliente de la API de MercadoLibre
-const URL_BASE_API = 'https://mercado-scraping.shop'; // Reemplaza con tu dominio real de la API
+// HTML Form
+const searchForm = `
+<form id="searchForm" class="mb-4">
+    <input type="text" id="producto" class="form-control" placeholder="Ingrese producto a buscar" required>
+    <button type="submit" class="btn btn-primary mt-2">Buscar</button>
+</form>
+<div id="results" class="mt-4"></div>
+<div id="loading" style="display: none;">Cargando...</div>
+`;
 
-class ClienteMercadoLibre {
-    /**
-     * Busca productos en MercadoLibre
-     * @param {string} producto - Nombre del producto a buscar
-     * @returns {Promise} Promesa con los resultados de la búsqueda
-     */
-    static async buscarProductos(producto) {
-        try {
-            const respuesta = await fetch(`${URL_BASE_API}/mercadolibre`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({ producto })
-            });
+document.body.insertAdjacentHTML('beforeend', searchForm);
 
-            if (!respuesta.ok) {
-                const datosError = await respuesta.json();
-                throw new Error(datosError.error || 'Error al buscar productos');
-            }
+// Main JavaScript implementation
+document.getElementById('searchForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const loading = document.getElementById('loading');
+    const results = document.getElementById('results');
+    const producto = document.getElementById('producto').value;
+    
+    loading.style.display = 'block';
+    results.innerHTML = '';
 
-            return await respuesta.json();
-        } catch (error) {
-            console.error('Error al buscar productos:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Descarga los resultados de búsqueda como archivo Excel
-     * @param {Object} datos - Datos de los resultados de búsqueda
-     * @returns {Promise} Promesa que representa la descarga del archivo
-     */
-    static async descargarExcel(datos) {
-        try {
-            // Crear FormData
-            const formData = new FormData();
-            formData.append('data', JSON.stringify(datos));
-
-            const respuesta = await fetch(`${URL_BASE_API}/descargarExcel`, {
-                method: 'POST',
-                body: formData
-            });
-
-            if (!respuesta.ok) {
-                const datosError = await respuesta.json();
-                throw new Error(datosError.error || 'Error al descargar el archivo Excel');
-            }
-
-            // Crear blob desde la respuesta
-            const blob = await respuesta.blob();
-            
-            // Crear enlace de descarga
-            const url = window.URL.createObjectURL(blob);
-            const enlaceDescarga = document.createElement('a');
-            enlaceDescarga.href = url;
-            enlaceDescarga.download = 'productos_mercadolibre.xlsx';
-            
-            // Iniciar descarga
-            document.body.appendChild(enlaceDescarga);
-            enlaceDescarga.click();
-            
-            // Limpieza
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(enlaceDescarga);
-        } catch (error) {
-            console.error('Error al descargar Excel:', error);
-            throw error;
-        }
-    }
-}
-
-// Ejemplo de uso con async/await
-async function ejemplo() {
     try {
-        // Buscar productos
-        const resultadosBusqueda = await ClienteMercadoLibre.buscarProductos('laptop');
-        console.log('Resultados de búsqueda:', resultadosBusqueda);
-        
-        // Descargar resultados como Excel
-        if (resultadosBusqueda.datos && resultadosBusqueda.datos.length > 0) {
-            await ClienteMercadoLibre.descargarExcel(resultadosBusqueda);
-            console.log('Archivo Excel descargado exitosamente');
+        // Search products
+        const searchResponse = await fetch('https://mercado-scraping.shop/mercadolibre', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'your-auth-token' // If required
+            },
+            body: JSON.stringify({ producto })
+        });
+
+        const data = await searchResponse.json();
+
+        if (data.error) {
+            throw new Error(data.error);
         }
+
+        // Display results
+        displayResults(data);
+
+        // Add download button if there are results
+        if (data.datos && data.datos.length > 0) {
+            const downloadButton = document.createElement('button');
+            downloadButton.textContent = 'Descargar Excel';
+            downloadButton.className = 'btn btn-success mt-3';
+            downloadButton.onclick = () => downloadExcel(data);
+            results.appendChild(downloadButton);
+        }
+
     } catch (error) {
-        console.error('Error:', error.message);
+        results.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+    } finally {
+        loading.style.display = 'none';
+    }
+});
+
+function displayResults(data) {
+    const results = document.getElementById('results');
+    
+    if (!data.datos || data.datos.length === 0) {
+        results.innerHTML = '<div class="alert alert-info">No se encontraron productos</div>';
+        return;
+    }
+
+    const productsHTML = data.datos.map(product => `
+        <div class="card mb-3">
+            <div class="row g-0">
+                <div class="col-md-4">
+                    <img src="${product.imagenes}" class="img-fluid rounded-start" alt="${product.titulo}">
+                </div>
+                <div class="col-md-8">
+                    <div class="card-body">
+                        <h5 class="card-title">${product.titulo}</h5>
+                        <p class="card-text">Vendedor: ${product.vendedor}</p>
+                        <p class="card-text">Precio original: ${product.precio_original}</p>
+                        <p class="card-text">Precio con descuento: ${product.precio_con_descuento}</p>
+                        <p class="card-text">Descuento: ${product.descuento}</p>
+                        <p class="card-text">Cuotas: ${product.cuotas}</p>
+                        <p class="card-text">Envío: ${product.envios}</p>
+                        <p class="card-text">Cantidad vendida: ${product.cantidad_vendida}</p>
+                        <a href="${product.url_producto}" target="_blank" class="btn btn-primary">Ver en MercadoLibre</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+
+    results.innerHTML = `
+        <h3>Resultados encontrados: ${data.num_products}</h3>
+        <p>Tiempo de procesamiento: ${data.processing_time} segundos</p>
+        ${productsHTML}
+    `;
+}
+
+async function downloadExcel(data) {
+    try {
+        const formData = new FormData();
+        formData.append('data', JSON.stringify(data));
+
+        const response = await fetch('https://mercado-scraping.shop/descargarExcel', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            throw new Error('Error al descargar el archivo');
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'productos_mercadolibre.xlsx';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+
+    } catch (error) {
+        alert(`Error al descargar el Excel: ${error.message}`);
     }
 }
-
-// Ejemplo de uso con promesas
-function ejemploConPromesas() {
-    ClienteMercadoLibre.buscarProductos('smartphone')
-        .then(resultados => {
-            console.log('Resultados de búsqueda:', resultados);
-            if (resultados.datos && resultados.datos.length > 0) {
-                return ClienteMercadoLibre.descargarExcel(resultados);
-            }
-        })
-        .then(() => {
-            console.log('Archivo Excel descargado exitosamente');
-        })
-        .catch(error => {
-            console.error('Error:', error.message);
-        });
-}
-
-export default ClienteMercadoLibre;
